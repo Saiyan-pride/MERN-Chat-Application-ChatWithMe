@@ -12,6 +12,7 @@ import {
 import { useState } from "react";
 import axios from "axios";
 import { useHistory } from "react-router";
+import { ChatState } from "../../context/chatProvider";
 
 function Signup() {
   const [name, setName] = useState();
@@ -23,6 +24,7 @@ function Signup() {
   const [loading, setLoading] = useState(false);
   const toast = useToast();
   const history = useHistory();
+  const { setUser } = ChatState();
 
   const handleClick = () => setShow(!show);
   const postDetails = (pic) => {
@@ -123,6 +125,7 @@ function Signup() {
         isClosable: true,
         position: "top",
       });
+      setUser(data);
       localStorage.setItem("userInfo", JSON.stringify(data));
       setLoading(false);
       history.push("/chats");
