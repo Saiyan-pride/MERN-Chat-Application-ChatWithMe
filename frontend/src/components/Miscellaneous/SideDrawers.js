@@ -52,6 +52,7 @@ function SideDrawers() {
         isClosable: true,
         position: "top-left",
       });
+      setSearchResult([]);
       return;
     }
     try {
