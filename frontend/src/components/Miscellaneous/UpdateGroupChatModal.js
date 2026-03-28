@@ -22,7 +22,7 @@ import { useState } from "react";
 import { ChatState } from "../../context/chatProvider";
 import axios from "axios";
 
-function UpdateGroupChatModal({ fetchAgain, setFetchAgain }) {
+function UpdateGroupChatModal({ fetchAgain, setFetchAgain, fetchMessages }) {
   const { isOpen, onOpen, onClose } = useDisclosure();
   const [groupChatName, setGroupChatName] = useState();
   const [search, setSearch] = useState("");
@@ -61,7 +61,7 @@ function UpdateGroupChatModal({ fetchAgain, setFetchAgain }) {
       );
       user1._id === user._id ? setSelectedChat() : setSelectedChat(data);
       setFetchAgain(!fetchAgain);
-      //   fetchMessages();
+      fetchMessages();
       setLoading(false);
     } catch (error) {
       toast({

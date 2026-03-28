@@ -20,7 +20,7 @@ function MyChats({ fetchAgain }) {
         },
       };
       const { data } = await axios.get("/api/chat", config);
-      console.log(data);
+      // console.log(data);
       setChats(data);
     } catch (error) {
       toast({
@@ -36,8 +36,8 @@ function MyChats({ fetchAgain }) {
 
   useEffect(() => {
     setLoggedUser(JSON.parse(localStorage.getItem("userInfo")));
-    fetchChats();
-  }, [fetchAgain]);
+    if (user) fetchChats();
+  }, [fetchAgain, user]);
 
   return (
     <Box
@@ -96,7 +96,7 @@ function MyChats({ fetchAgain }) {
               >
                 <Text>
                   {!chat.isGroupChat
-                    ? getSender(loggedUser, chat.users)
+                    ? getSender(user, chat.users)
                     : chat.chatName}
                 </Text>
               </Box>
