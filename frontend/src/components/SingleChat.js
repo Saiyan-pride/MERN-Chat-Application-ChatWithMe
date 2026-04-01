@@ -33,7 +33,8 @@ const defaultOptions = {
 };
 
 function SingleChat({ fetchAgain, setFetchAgain }) {
-  const { user, selectedChat, setSelectedChat } = ChatState();
+  const { user, selectedChat, setSelectedChat, notification, setNotification } =
+    ChatState();
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(false);
   const [newMessage, setNewMessage] = useState("");
@@ -72,10 +73,6 @@ function SingleChat({ fetchAgain, setFetchAgain }) {
       });
     }
   };
-  useEffect(() => {
-    fetchMessages();
-    selectedChatCompare = selectedChat;
-  }, [selectedChat]);
 
   const sendMessages = async (e) => {
     if (e.key === "Enter" && newMessage) {
@@ -153,19 +150,31 @@ function SingleChat({ fetchAgain, setFetchAgain }) {
   };
 
   useEffect(() => {
+    fetchMessages();
+    selectedChatCompare = selectedChat;
+  }, [selectedChat]);
+  console.log(notification, "-------<<<");
+
+  useEffect(() => {
     socket.on("message received", (newMessageReceived) => {
       if (
         !selectedChatCompare ||
         selectedChatCompare._id !== newMessageReceived.chat._id
       ) {
         // notification
+        if (!notification.includes(newMessageReceived)) {
+          setNotification([newMessageReceived, ...notification]);
+          setFetchAgain(!fetchAgain);
+        }
       } else {
-        setMessages((prev) => [...prev, newMessageReceived]);
+        // setMessages((prev) => [...prev, newMessageReceived]);
+        setMessages([...messages, newMessageReceived]);
       }
     });
 
-    return () => socket.off("message received"); // cleanup
-  }, []);
+    return () => socket.off("message received");
+  }, [notification]);
+
   return (
     <>
       {selectedChat ? (
