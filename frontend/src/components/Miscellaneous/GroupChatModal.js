@@ -59,7 +59,7 @@ function GroupChatModal({ children }) {
     }
   };
   const handleSubmit = async () => {
-    if (!groupChatName || !selectedUser) {
+    if (!groupChatName || selectedUser.length < 2) {
       toast({
         title: "Please fill all the field",
         status: "warning",
@@ -104,7 +104,7 @@ function GroupChatModal({ children }) {
     }
   };
   const handleGroup = (userToAdd) => {
-    if (selectedUser.includes(userToAdd)) {
+    if (selectedUser.some((u) => u._id === userToAdd._id)) {
       toast({
         title: "User already added",
         status: "warning",

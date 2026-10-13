@@ -98,6 +98,7 @@ function Signup() {
         isClosable: true,
         position: "top",
       });
+      setLoading(false);
       return;
     }
     console.log(name, email, pass, pic);

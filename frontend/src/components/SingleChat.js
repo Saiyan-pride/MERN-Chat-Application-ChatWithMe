@@ -12,7 +12,7 @@ import { ArrowBackIcon, ViewIcon } from "@chakra-ui/icons";
 import { getSender, getSenderFull } from "../config/ChatLogic";
 import ProfileModal from "./Miscellaneous/ProfileModal";
 import UpdateGroupChatModal from "./Miscellaneous/UpdateGroupChatModal";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import axios from "axios";
 import "./styles.css";
 import ScrollableChat from "./ScrollableChat";
@@ -21,7 +21,7 @@ import animationData from "../animations/Typing.json";
 import Lottie from "react-lottie";
 
 const ENDPOINT = "http://localhost:5000";
-let socket, selectedChatCompare;
+let socket;
 
 const defaultOptions = {
   loop: true,
@@ -42,6 +42,9 @@ function SingleChat({ fetchAgain, setFetchAgain }) {
   const [typing, setTyping] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
 
+  const typingTimeoutRef = useRef(null);
+  const selectedChatCompareRef = useRef(); // <--- Tracks current chat safely
+
   const toast = useToast();
 
   const fetchMessages = async () => {
@@ -57,7 +60,6 @@ function SingleChat({ fetchAgain, setFetchAgain }) {
         `/api/message/${selectedChat._id}`,
         config,
       );
-      // console.log(messages);
       setMessages(data);
       setLoading(false);
 
@@ -65,7 +67,7 @@ function SingleChat({ fetchAgain, setFetchAgain }) {
     } catch (error) {
       toast({
         title: "Error Occurred!",
-        description: "Failed to send the Message",
+        description: "Failed to load the Messages",
         status: "error",
         duration: 5000,
         isClosable: true,
@@ -93,9 +95,7 @@ function SingleChat({ fetchAgain, setFetchAgain }) {
           },
           config,
         );
-        console.log(data);
         socket.emit("new message", data);
-        // setMessages([...messages], data);
         setMessages((prev) => [...prev, data]);
       } catch (error) {
         toast({
@@ -110,6 +110,7 @@ function SingleChat({ fetchAgain, setFetchAgain }) {
     }
   };
 
+  // 1. Initialize socket once per user
   useEffect(() => {
     socket = io(ENDPOINT);
     socket.emit("setup", user);
@@ -117,19 +118,61 @@ function SingleChat({ fetchAgain, setFetchAgain }) {
     socket.on("connected", () => setSocketConnected(true));
 
     socket.on("typing", (chatId) => {
-      if (selectedChat && chatId === selectedChat._id) {
-        setIsTyping(true);
+      if (
+        selectedChatCompareRef.current &&
+        chatId === selectedChatCompareRef.current._id
+      ) {
+        setIsTyping(true); // Fixed: was setTyping(true)
       }
     });
 
     socket.on("stop typing", (chatId) => {
-      if (selectedChat && chatId === selectedChat._id) {
+      if (
+        selectedChatCompareRef.current &&
+        chatId === selectedChatCompareRef.current._id
+      ) {
         setIsTyping(false);
       }
     });
+
+    return () => {
+      socket.disconnect();
+    };
+  }, [user]);
+
+  // 2. Fetch messages & update selectedChat reference on chat switch
+  useEffect(() => {
+    fetchMessages();
+    selectedChatCompareRef.current = selectedChat;
   }, [selectedChat]);
 
-  let typingTimeout;
+  // 3. Listen for incoming messages
+  useEffect(() => {
+    if (!socket) return;
+
+    socket.on("message received", (newMessageReceived) => {
+      if (
+        !selectedChatCompareRef.current ||
+        selectedChatCompareRef.current._id !== newMessageReceived.chat._id
+      ) {
+        setNotification((prevNotifications) => {
+          if (
+            !prevNotifications.some((n) => n._id === newMessageReceived._id)
+          ) {
+            return [newMessageReceived, ...prevNotifications];
+          }
+          return prevNotifications;
+        });
+        setFetchAgain((prev) => !prev);
+      } else {
+        setMessages((prevMessages) => [...prevMessages, newMessageReceived]);
+      }
+    });
+
+    return () => {
+      socket.off("message received");
+    };
+  }, []);
 
   const typingHandler = (e) => {
     setNewMessage(e.target.value);
@@ -141,39 +184,15 @@ function SingleChat({ fetchAgain, setFetchAgain }) {
       socket.emit("typing", selectedChat._id);
     }
 
-    if (typingTimeout) clearTimeout(typingTimeout);
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+    }
 
-    typingTimeout = setTimeout(() => {
+    typingTimeoutRef.current = setTimeout(() => {
       socket.emit("stop typing", selectedChat._id);
       setTyping(false);
     }, 3000);
   };
-
-  useEffect(() => {
-    fetchMessages();
-    selectedChatCompare = selectedChat;
-  }, [selectedChat]);
-  console.log(notification, "-------<<<");
-
-  useEffect(() => {
-    socket.on("message received", (newMessageReceived) => {
-      if (
-        !selectedChatCompare ||
-        selectedChatCompare._id !== newMessageReceived.chat._id
-      ) {
-        // notification
-        if (!notification.includes(newMessageReceived)) {
-          setNotification([newMessageReceived, ...notification]);
-          setFetchAgain(!fetchAgain);
-        }
-      } else {
-        // setMessages((prev) => [...prev, newMessageReceived]);
-        setMessages([...messages, newMessageReceived]);
-      }
-    });
-
-    return () => socket.off("message received");
-  }, [notification]);
 
   return (
     <>

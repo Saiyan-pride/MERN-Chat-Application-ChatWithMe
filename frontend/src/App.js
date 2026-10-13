@@ -1,4 +1,4 @@
-import { Route } from "react-router-dom/cjs/react-router-dom.min";
+import { Route } from "react-router-dom";
 import "./App.css";
 import { Button } from "@chakra-ui/react";
 import HomePage from "./pages/HomePage";

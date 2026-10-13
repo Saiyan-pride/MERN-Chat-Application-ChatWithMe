@@ -88,6 +88,7 @@ function SideDrawers() {
 
   const assessChat = async (userId) => {
     try {
+      setLoadingChat(true);
       const config = {
         headers: {
           "Content-type": "application/json",
@@ -100,6 +101,7 @@ function SideDrawers() {
       setLoadingChat(false);
       onClose();
     } catch (error) {
+      setLoadingChat(false);
       toast({
         title: "Error fetching the chat",
         description: error.message,
@@ -158,7 +160,9 @@ function SideDrawers() {
                   key={notify._id}
                   onClick={() => {
                     setSelectedChat(notify.chat);
-                    setNotification(notification.filter((n) => n !== notify));
+                    setNotification(
+                      notification.filter((n) => n._id !== notify._id),
+                    );
                   }}
                 >
                   {notify.chat.isGroupChat
