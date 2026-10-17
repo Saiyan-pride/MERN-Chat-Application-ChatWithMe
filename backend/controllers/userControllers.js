@@ -65,4 +65,38 @@ const allUsers = expressAsyncHandler(async (req, res) => {
   res.send(users);
 });
 
-module.exports = { registerUser, authUser, allUsers };
+const updateProfile = expressAsyncHandler(async (req, res) => {
+  const user = await User.findById(req.user._id);
+
+  if (!user) {
+    res.status(404);
+    throw new Error("User not found");
+  }
+
+  // Prevent modifying demo guest account
+  if (user.email === "guest@example.com") {
+    res.status(403);
+    throw new Error("Guest demo profile cannot be modified");
+  }
+
+  if (req.body.name && req.body.name.trim()) {
+    user.name = req.body.name.trim();
+  }
+
+  if (req.body.pic && req.body.pic.trim()) {
+    user.pic = req.body.pic.trim();
+  }
+
+  const updatedUser = await user.save();
+
+  res.json({
+    _id: updatedUser._id,
+    name: updatedUser.name,
+    email: updatedUser.email,
+    pic: updatedUser.pic,
+    token: generateToken(updatedUser._id),
+  });
+});
+
+module.exports = { registerUser, authUser, allUsers, updateProfile };
+
