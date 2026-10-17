@@ -1,4 +1,5 @@
 import {
+  Box,
   Button,
   FormControl,
   FormLabel,
@@ -134,6 +135,17 @@ function Login() {
           </InputRightElement>
         </InputGroup>
       </FormControl>
+
+      <Box display="flex" justifyContent="flex-end" width="100%" pt={1}>
+        <Button
+          variant="link"
+          colorScheme="blue"
+          size="sm"
+          onClick={() => history.push("/forgot-password")}
+        >
+          Forgot Password?
+        </Button>
+      </Box>
 
       <Button
         colorScheme="blue"
