@@ -4,6 +4,7 @@ const connectDB = require("./config/db");
 const userRoute = require("./routes/userRoute");
 const chatRoute = require("./routes/chatRoute");
 const messageRoute = require("./routes/messageRoute");
+const aiRoute = require("./routes/aiRoute");
 const { notFound, errorHandler } = require("./middleware/errorMiddleware");
 const path = require("path");
 
@@ -16,6 +17,7 @@ app.use(express.json()); // to accept json data
 app.use("/api/user", userRoute);
 app.use("/api/chat", chatRoute);
 app.use("/api/message", messageRoute);
+app.use("/api/ai", aiRoute);
 
 // Deployment
 

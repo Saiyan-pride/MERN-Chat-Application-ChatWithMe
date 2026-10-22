@@ -1,9 +1,13 @@
 import {
   Box,
   FormControl,
+  HStack,
   IconButton,
   Input,
+  InputGroup,
+  InputRightElement,
   Spinner,
+  Tag,
   Text,
   useToast,
 } from "@chakra-ui/react";
@@ -12,6 +16,10 @@ import { ArrowBackIcon, ViewIcon } from "@chakra-ui/icons";
 import { getSender, getSenderFull } from "../config/ChatLogic";
 import ProfileModal from "./Miscellaneous/ProfileModal";
 import UpdateGroupChatModal from "./Miscellaneous/UpdateGroupChatModal";
+import SummaryModal from "./Miscellaneous/SummaryModal";
+import SmartReplyChips from "./Miscellaneous/SmartReplyChips";
+import PolishMenu from "./Miscellaneous/PolishMenu";
+import { SparklesIcon } from "./Miscellaneous/AiIcons";
 import { useEffect, useRef, useState } from "react";
 import axios from "axios";
 import "./styles.css";
@@ -41,11 +49,19 @@ function SingleChat({ fetchAgain, setFetchAgain }) {
   const [socketConnected, setSocketConnected] = useState(false);
   const [typing, setTyping] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
+  const [aiLoading, setAiLoading] = useState(false);
 
   const typingTimeoutRef = useRef(null);
-  const selectedChatCompareRef = useRef(); // <--- Tracks current chat safely
+  const selectedChatCompareRef = useRef();
 
   const toast = useToast();
+
+  const isAiChat = Boolean(
+    selectedChat?.chatName === "AI Assistant" ||
+      selectedChat?.users?.some(
+        (u) => u.email === "ai.assistant@chatwithme.internal"
+      )
+  );
 
   const fetchMessages = async () => {
     if (!selectedChat) return;
@@ -58,12 +74,14 @@ function SingleChat({ fetchAgain, setFetchAgain }) {
       setLoading(true);
       const { data } = await axios.get(
         `/api/message/${selectedChat._id}`,
-        config,
+        config
       );
       setMessages(data);
       setLoading(false);
 
-      socket.emit("join chat", selectedChat._id);
+      if (!isAiChat) {
+        socket.emit("join chat", selectedChat._id);
+      }
     } catch (error) {
       toast({
         title: "Error Occurred!",
@@ -73,12 +91,18 @@ function SingleChat({ fetchAgain, setFetchAgain }) {
         isClosable: true,
         position: "top",
       });
+      setLoading(false);
     }
   };
 
   const sendMessages = async (e) => {
-    if (e.key === "Enter" && newMessage) {
-      socket.emit("stop typing", selectedChat._id);
+    if (e.key === "Enter" && newMessage.trim()) {
+      const messageToSend = newMessage.trim();
+      if (!isAiChat) {
+        socket.emit("stop typing", selectedChat._id);
+      }
+      setNewMessage("");
+
       try {
         const config = {
           headers: {
@@ -86,17 +110,49 @@ function SingleChat({ fetchAgain, setFetchAgain }) {
             Authorization: `Bearer ${user.token}`,
           },
         };
-        setNewMessage("");
         const { data } = await axios.post(
           "/api/message/",
           {
-            content: newMessage,
+            content: messageToSend,
             chatId: selectedChat._id,
           },
-          config,
+          config
         );
-        socket.emit("new message", data);
+
+        if (!isAiChat) {
+          socket.emit("new message", data);
+        }
         setMessages((prev) => [...prev, data]);
+
+        // If chatting with AI Assistant, trigger Gemini response
+        if (isAiChat) {
+          setAiLoading(true);
+          try {
+            const { data: aiData } = await axios.post(
+              "/api/ai/chat",
+              {
+                chatId: selectedChat._id,
+                message: messageToSend,
+              },
+              config
+            );
+            if (aiData?.reply) {
+              setMessages((prev) => [...prev, aiData.reply]);
+            }
+          } catch (aiError) {
+            toast({
+              title: "AI Response Error",
+              description:
+                aiError.response?.data?.message || "Could not retrieve reply.",
+              status: "error",
+              duration: 4000,
+              isClosable: true,
+              position: "top",
+            });
+          } finally {
+            setAiLoading(false);
+          }
+        }
       } catch (error) {
         toast({
           title: "Error Occurred!",
@@ -122,7 +178,7 @@ function SingleChat({ fetchAgain, setFetchAgain }) {
         selectedChatCompareRef.current &&
         chatId === selectedChatCompareRef.current._id
       ) {
-        setIsTyping(true); // Fixed: was setTyping(true)
+        setIsTyping(true);
       }
     });
 
@@ -140,44 +196,44 @@ function SingleChat({ fetchAgain, setFetchAgain }) {
     };
   }, [user]);
 
-  // 2. Fetch messages & update selectedChat reference on chat switch
+  // 2. Load messages on chat change and update reference safely
   useEffect(() => {
     fetchMessages();
     selectedChatCompareRef.current = selectedChat;
+    setIsTyping(false);
+    setAiLoading(false);
   }, [selectedChat]);
 
-  // 3. Listen for incoming messages
+  // 3. Message receiver listener with deduplicated notifications
   useEffect(() => {
-    if (!socket) return;
-
-    socket.on("message received", (newMessageReceived) => {
+    const handleMessageReceived = (newMessageReceived) => {
       if (
         !selectedChatCompareRef.current ||
         selectedChatCompareRef.current._id !== newMessageReceived.chat._id
       ) {
-        setNotification((prevNotifications) => {
-          if (
-            !prevNotifications.some((n) => n._id === newMessageReceived._id)
-          ) {
-            return [newMessageReceived, ...prevNotifications];
+        setNotification((prev) => {
+          if (!prev.some((n) => n._id === newMessageReceived._id)) {
+            return [newMessageReceived, ...prev];
           }
-          return prevNotifications;
+          return prev;
         });
-        setFetchAgain((prev) => !prev);
+        setFetchAgain(!fetchAgain);
       } else {
-        setMessages((prevMessages) => [...prevMessages, newMessageReceived]);
+        setMessages((prev) => [...prev, newMessageReceived]);
       }
-    });
+    };
+
+    socket.on("message received", handleMessageReceived);
 
     return () => {
-      socket.off("message received");
+      socket.off("message received", handleMessageReceived);
     };
-  }, []);
+  }, [fetchAgain, setFetchAgain, setNotification]);
 
   const typingHandler = (e) => {
     setNewMessage(e.target.value);
 
-    if (!socketConnected || !selectedChat) return;
+    if (isAiChat || !socketConnected || !selectedChat) return;
 
     if (!typing) {
       setTyping(true);
@@ -199,13 +255,13 @@ function SingleChat({ fetchAgain, setFetchAgain }) {
       {selectedChat ? (
         <>
           <Text
-            fontSize={{ base: "28px", md: "30px" }}
+            fontSize={{ base: "26px", md: "28px" }}
             pb={3}
             px={2}
             width="100%"
             fontFamily="Work sans"
             display="flex"
-            justifyContent={{ base: "space-between" }}
+            justifyContent="space-between"
             alignItems="center"
           >
             <IconButton
@@ -213,24 +269,46 @@ function SingleChat({ fetchAgain, setFetchAgain }) {
               icon={<ArrowBackIcon />}
               onClick={() => setSelectedChat("")}
             />
-            {!selectedChat.isGroupChat ? (
+
+            {isAiChat ? (
+              <HStack spacing={2}>
+                <SparklesIcon color="purple.500" boxSize={5} />
+                <Text fontWeight="bold">AI Assistant</Text>
+                <Tag size="sm" colorScheme="purple" variant="subtle">
+                  Gemini
+                </Tag>
+              </HStack>
+            ) : !selectedChat.isGroupChat ? (
               <>
-                {getSender(user, selectedChat.users)}
-                <ProfileModal user={getSenderFull(user, selectedChat.users)}>
-                  <IconButton icon={<ViewIcon />} />
-                </ProfileModal>
+                <Text noOfLines={1}>{getSender(user, selectedChat.users)}</Text>
+                <HStack spacing={1}>
+                  <SummaryModal
+                    chatId={selectedChat._id}
+                    chatName={getSender(user, selectedChat.users)}
+                  />
+                  <ProfileModal user={getSenderFull(user, selectedChat.users)}>
+                    <IconButton icon={<ViewIcon />} />
+                  </ProfileModal>
+                </HStack>
               </>
             ) : (
               <>
-                {selectedChat.chatName.toUpperCase()}
-                <UpdateGroupChatModal
-                  fetchMessages={fetchMessages}
-                  fetchAgain={fetchAgain}
-                  setFetchAgain={setFetchAgain}
-                />
+                <Text noOfLines={1}>{selectedChat.chatName.toUpperCase()}</Text>
+                <HStack spacing={1}>
+                  <SummaryModal
+                    chatId={selectedChat._id}
+                    chatName={selectedChat.chatName}
+                  />
+                  <UpdateGroupChatModal
+                    fetchMessages={fetchMessages}
+                    fetchAgain={fetchAgain}
+                    setFetchAgain={setFetchAgain}
+                  />
+                </HStack>
               </>
             )}
           </Text>
+
           <Box
             display="flex"
             flexDir="column"
@@ -255,8 +333,18 @@ function SingleChat({ fetchAgain, setFetchAgain }) {
                 <ScrollableChat messages={messages} />
               </div>
             )}
-            <FormControl onKeyDown={sendMessages} isRequired marginTop={3}>
-              {isTyping ? (
+
+            {/* Smart contextual reply suggestions */}
+            {!isAiChat && messages.length > 0 && (
+              <SmartReplyChips
+                chatId={selectedChat._id}
+                lastMessage={messages[messages.length - 1]}
+                onSelectReply={(text) => setNewMessage(text)}
+              />
+            )}
+
+            <FormControl onKeyDown={sendMessages} isRequired marginTop={1}>
+              {isTyping || aiLoading ? (
                 <div>
                   <Lottie
                     options={defaultOptions}
@@ -268,13 +356,26 @@ function SingleChat({ fetchAgain, setFetchAgain }) {
               ) : (
                 <></>
               )}
-              <Input
-                variant="filled"
-                bg="#E0E0E0"
-                placeholder="Type here..."
-                value={newMessage}
-                onChange={typingHandler}
-              />
+              <InputGroup>
+                <Input
+                  variant="filled"
+                  bg="#E0E0E0"
+                  placeholder={
+                    isAiChat
+                      ? "Ask AI Assistant anything..."
+                      : "Type here..."
+                  }
+                  value={newMessage}
+                  onChange={typingHandler}
+                  pr="3.5rem"
+                />
+                <InputRightElement width="3.5rem">
+                  <PolishMenu
+                    draftText={newMessage}
+                    onApplyPolish={(text) => setNewMessage(text)}
+                  />
+                </InputRightElement>
+              </InputGroup>
             </FormControl>
           </Box>
         </>
