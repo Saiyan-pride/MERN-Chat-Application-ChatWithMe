@@ -9,11 +9,31 @@ const {
   polishDraft,
   chatWithAi,
 } = require("../services/aiService");
+const {
+  rollbackAiQuota,
+  getAiUsageSummary,
+} = require("../middleware/aiUsageMiddleware");
+
+const formatUsageResponse = (req, isFallback = false) => {
+  if (!req.aiUsage) return undefined;
+  return {
+    feature: req.aiUsage.feature,
+    used: req.aiUsage.used,
+    limit: req.aiUsage.limit,
+    remaining: req.aiUsage.remaining,
+    combinedUsed: req.aiUsage.combinedUsed,
+    combinedLimit: req.aiUsage.combinedLimit,
+    combinedRemaining: req.aiUsage.combinedRemaining,
+    isFallback: Boolean(isFallback || req.aiUsage.isFallback),
+    resetsAt: req.aiUsage.resetsAt,
+  };
+};
 
 const AI_BOT_EMAIL = "ai.assistant@chatwithme.internal";
 const AI_BOT_NAME = "AI Assistant";
 const AI_BOT_PIC =
-  "https://res.cloudinary.com/dtz0urit6/image/upload/q_auto:best,f_jpg/cloudinary-tools-uploads/edkmw7dp2wsw47ir1zkr";
+  "https://res.cloudinary.com/dtz0urit6/image/upload/q_auto:best,f_jpg/cloudinary-tools-uploads/edkmw7dp2wsw47ir1zkr" ||
+  "https://pixabay.com/images/download/x-8203396_1920.jpg";
 
 /**
  * Helper: Find or create the system AI Bot User
@@ -72,12 +92,21 @@ const summarizeChat = asyncHandler(async (req, res) => {
     : chat.users.find((u) => u._id.toString() !== req.user._id.toString())
         ?.name || "Chat";
 
-  const summary = await generateSummary(chatTitle, chronologicalMessages);
+  const summaryResult = await generateSummary(chatTitle, chronologicalMessages);
+  const isFallback = Boolean(summaryResult.isFallback);
+  if (isFallback && req.aiUsage?.reserved) {
+    await rollbackAiQuota(req);
+  }
 
   res.status(200).json({
     success: true,
-    summary,
+    summary: {
+      overview: summaryResult.overview,
+      keyPoints: summaryResult.keyPoints,
+      actionItems: summaryResult.actionItems,
+    },
     messageCount: chronologicalMessages.length,
+    usage: formatUsageResponse(req, isFallback),
   });
 });
 
@@ -114,25 +143,44 @@ const getSmartReplies = asyncHandler(async (req, res) => {
     .populate("sender", "name email");
 
   if (!recentMessages || recentMessages.length === 0) {
-    return res.status(200).json({ success: true, replies: [] });
+    if (req.aiUsage?.reserved) await rollbackAiQuota(req);
+    return res.status(200).json({
+      success: true,
+      replies: [],
+      usage: formatUsageResponse(req, true),
+    });
   }
 
   const lastMessage = recentMessages[0];
 
   // If the user was the sender of the last message, smart replies are not needed
   if (lastMessage.sender?._id?.toString() === req.user._id.toString()) {
-    return res.status(200).json({ success: true, replies: [] });
+    if (req.aiUsage?.reserved) await rollbackAiQuota(req);
+    return res.status(200).json({
+      success: true,
+      replies: [],
+      usage: formatUsageResponse(req, true),
+    });
   }
 
-  const replies = await generateSmartReplies(
+  const replyResult = await generateSmartReplies(
     recentMessages.reverse(),
     lastMessage.content,
     lastMessage.sender?.name,
   );
 
+  const replies = Array.isArray(replyResult)
+    ? replyResult
+    : replyResult?.replies || [];
+  const isFallback = Boolean(replyResult?.isFallback);
+  if (isFallback && req.aiUsage?.reserved) {
+    await rollbackAiQuota(req);
+  }
+
   res.status(200).json({
     success: true,
     replies,
+    usage: formatUsageResponse(req, isFallback),
   });
 });
 
@@ -152,11 +200,16 @@ const polishMessage = asyncHandler(async (req, res) => {
   const selectedTone = allowedTones.includes(tone) ? tone : "professional";
 
   const result = await polishDraft(text, selectedTone);
+  const isFallback = Boolean(result.isFallback);
+  if (isFallback && req.aiUsage?.reserved) {
+    await rollbackAiQuota(req);
+  }
 
   res.status(200).json({
     success: true,
     polishedText: result.polishedText,
     tone: result.tone,
+    usage: formatUsageResponse(req, isFallback),
   });
 });
 
@@ -194,6 +247,10 @@ const chatWithAssistant = asyncHandler(async (req, res) => {
 
   // Generate response from AI service
   const aiResult = await chatWithAi(formattedHistory, message);
+  const isFallback = Boolean(aiResult.isFallback);
+  if (isFallback && req.aiUsage?.reserved) {
+    await rollbackAiQuota(req);
+  }
 
   // Persist AI reply into database
   let botReplyMessage = await Message.create({
@@ -214,6 +271,7 @@ const chatWithAssistant = asyncHandler(async (req, res) => {
   res.status(200).json({
     success: true,
     reply: botReplyMessage,
+    usage: formatUsageResponse(req, isFallback),
   });
 });
 
@@ -272,10 +330,24 @@ const ensureBotChat = asyncHandler(async (req, res) => {
   res.status(200).json(fullChat);
 });
 
+/*
+ * @desc    Get current user daily AI usage & limits
+ * @route   GET /api/ai/usage
+ * @access  Protected
+ */
+const getAiUsageStatus = asyncHandler(async (req, res) => {
+  const summary = await getAiUsageSummary(req.user._id);
+  res.status(200).json({
+    success: true,
+    ...summary,
+  });
+});
+
 module.exports = {
   summarizeChat,
   getSmartReplies,
   polishMessage,
   chatWithAssistant,
   ensureBotChat,
+  getAiUsageStatus,
 };

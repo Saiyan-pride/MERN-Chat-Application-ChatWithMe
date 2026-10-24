@@ -100,7 +100,7 @@ ${transcript}`;
       return JSON.parse(cleaned);
     });
 
-    if (result) return result;
+    if (result) return { ...result, isFallback: false };
   } catch (err) {
     console.error("Gemini summary generation failed:", err.message);
   }
@@ -121,6 +121,7 @@ ${transcript}`;
       "Review latest messages for outstanding questions.",
       "Follow up with team members on agreed items.",
     ],
+    isFallback: true,
   };
 };
 
@@ -157,7 +158,7 @@ Respond ONLY with a valid JSON array of 3 strings, e.g. ["Understood.", "Let's d
       return null;
     });
 
-    if (result && result.length > 0) return result;
+    if (result && result.length > 0) return { replies: result, isFallback: false };
   } catch (err) {
     console.error("Gemini smart reply error:", err.message);
   }
@@ -165,15 +166,27 @@ Respond ONLY with a valid JSON array of 3 strings, e.g. ["Understood.", "Let's d
   // Fallback heuristics
   const lower = String(lastMessage).toLowerCase();
   if (lower.includes("how are you") || lower.includes("how's it going")) {
-    return ["Doing well, thank you!", "All good here, how about you?", "Busy but good!"];
+    return {
+      replies: ["Doing well, thank you!", "All good here, how about you?", "Busy but good!"],
+      isFallback: true,
+    };
   }
   if (lower.includes("meet") || lower.includes("time") || lower.includes("when")) {
-    return ["Let me check my calendar.", "4 PM works for me.", "Could we do tomorrow?"];
+    return {
+      replies: ["Let me check my calendar.", "4 PM works for me.", "Could we do tomorrow?"],
+      isFallback: true,
+    };
   }
   if (lower.includes("ok") || lower.includes("thanks") || lower.includes("thank you")) {
-    return ["You're welcome!", "Glad to help.", "Sounds good!"];
+    return {
+      replies: ["You're welcome!", "Glad to help.", "Sounds good!"],
+      isFallback: true,
+    };
   }
-  return ["Sounds good.", "I will check and get back to you.", "Understood, thank you."];
+  return {
+    replies: ["Sounds good.", "I will check and get back to you.", "Understood, thank you."],
+    isFallback: true,
+  };
 };
 
 /**
@@ -208,17 +221,27 @@ ${text}`;
       return { polishedText, tone };
     });
 
-    if (result) return result;
+    if (result) return { ...result, isFallback: false };
   } catch (err) {
     console.error("Gemini polish draft error:", err.message);
   }
 
   // Offline simulation fallback
   const clean = text.trim();
-  if (tone === "concise") return { polishedText: clean.replace(/\b(just|basically|actually|kind of)\b/gi, "").replace(/\s+/g, " ").trim(), tone };
-  if (tone === "professional") return { polishedText: `Please note: ${clean}`, tone };
-  if (tone === "friendly") return { polishedText: `Hope you are well! ${clean}`, tone };
-  return { polishedText: clean, tone };
+  if (tone === "concise")
+    return {
+      polishedText: clean
+        .replace(/\b(just|basically|actually|kind of)\b/gi, "")
+        .replace(/\s+/g, " ")
+        .trim(),
+      tone,
+      isFallback: true,
+    };
+  if (tone === "professional")
+    return { polishedText: `Please note: ${clean}`, tone, isFallback: true };
+  if (tone === "friendly")
+    return { polishedText: `Hope you are well! ${clean}`, tone, isFallback: true };
+  return { polishedText: clean, tone, isFallback: true };
 };
 
 /**
@@ -227,7 +250,10 @@ ${text}`;
  */
 const chatWithAi = async (history = [], userMessage = "") => {
   if (!userMessage || userMessage.trim().length === 0) {
-    return { reply: "Please ask a question or provide a topic to discuss." };
+    return {
+      reply: "Please ask a question or provide a topic to discuss.",
+      isFallback: true,
+    };
   }
 
   // Convert past messages to Gemini history format
@@ -258,13 +284,14 @@ const chatWithAi = async (history = [], userMessage = "") => {
       return { reply };
     });
 
-    if (result) return result;
+    if (result) return { reply: result.reply, isFallback: false };
   } catch (err) {
     console.error("Gemini chat error:", err.message);
   }
 
   return {
     reply: "I am your ChatWithMe AI Assistant. I am online and ready to assist you!",
+    isFallback: true,
   };
 };
 

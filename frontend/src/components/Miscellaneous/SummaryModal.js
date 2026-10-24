@@ -37,6 +37,7 @@ function SummaryModal({ chatId, chatName, children }) {
   const [loading, setLoading] = useState(false);
   const [summary, setSummary] = useState(null);
   const [messageCount, setMessageCount] = useState(0);
+  const [usage, setUsage] = useState(null);
 
   const toast = useToast();
 
@@ -53,14 +54,34 @@ function SummaryModal({ chatId, chatName, children }) {
       const { data } = await axios.post("/api/ai/summarize", { chatId }, config);
       setSummary(data.summary);
       setMessageCount(data.messageCount || 0);
+      if (data.usage) {
+        setUsage(data.usage);
+      }
       setLoading(false);
     } catch (error) {
+      const isLimit =
+        error.response?.status === 429 ||
+        error.response?.data?.errorType === "QUOTA_EXCEEDED" ||
+        error.response?.data?.errorType === "RATE_LIMITED";
+
+      if (
+        error.response?.data?.limitType === "feature" ||
+        error.response?.data?.limitType === "combined"
+      ) {
+        setUsage((prev) => ({
+          ...prev,
+          remaining: 0,
+          used: error.response?.data?.used || 5,
+          limit: error.response?.data?.limit || 5,
+        }));
+      }
+
       toast({
-        title: "Summarization Failed",
+        title: isLimit ? "Usage Limit Reached" : "Summarization Failed",
         description:
           error.response?.data?.message || "Could not generate summary at this time.",
-        status: "error",
-        duration: 4000,
+        status: isLimit ? "warning" : "error",
+        duration: 5000,
         isClosable: true,
         position: "top",
       });
@@ -116,7 +137,7 @@ function SummaryModal({ chatId, chatName, children }) {
         <ModalOverlay bg="blackAlpha.600" backdropFilter="blur(3px)" />
         <ModalContent borderRadius="xl" shadow="2xl">
           <ModalHeader pb={2}>
-            <HStack spacing={2} align="center">
+            <HStack spacing={2} align="center" wrap="wrap">
               <SparklesIcon color="purple.500" boxSize={5} />
               <Text fontSize="lg" fontWeight="bold">
                 Conversation Summary
@@ -124,6 +145,15 @@ function SummaryModal({ chatId, chatName, children }) {
               {messageCount > 0 && (
                 <Tag size="sm" colorScheme="purple" variant="subtle">
                   {messageCount} messages analyzed
+                </Tag>
+              )}
+              {usage && typeof usage.remaining === "number" && (
+                <Tag
+                  size="sm"
+                  colorScheme={usage.remaining > 0 ? "teal" : "orange"}
+                  variant="subtle"
+                >
+                  {usage.remaining}/{usage.limit} remaining today
                 </Tag>
               )}
             </HStack>
@@ -225,15 +255,27 @@ function SummaryModal({ chatId, chatName, children }) {
 
           <ModalFooter bg="gray.50" borderBottomRadius="xl" py={3}>
             <HStack justify="space-between" width="100%">
-              <Button
-                leftIcon={<RepeatIcon />}
-                size="sm"
-                variant="ghost"
-                onClick={fetchSummary}
-                isLoading={loading}
+              <Tooltip
+                label={
+                  usage?.remaining === 0
+                    ? "Daily summary quota exhausted. Resets at 00:00 UTC."
+                    : "Regenerate Summary"
+                }
+                hasArrow
               >
-                Regenerate
-              </Button>
+                <span>
+                  <Button
+                    leftIcon={<RepeatIcon />}
+                    size="sm"
+                    variant="ghost"
+                    onClick={fetchSummary}
+                    isLoading={loading}
+                    isDisabled={loading || (usage && usage.remaining === 0)}
+                  >
+                    Regenerate
+                  </Button>
+                </span>
+              </Tooltip>
               <HStack spacing={2}>
                 <Button
                   leftIcon={<CopyIcon />}

@@ -140,12 +140,17 @@ function SingleChat({ fetchAgain, setFetchAgain }) {
               setMessages((prev) => [...prev, aiData.reply]);
             }
           } catch (aiError) {
+            const isLimit =
+              aiError.response?.status === 429 ||
+              aiError.response?.data?.errorType === "QUOTA_EXCEEDED" ||
+              aiError.response?.data?.errorType === "RATE_LIMITED";
+
             toast({
-              title: "AI Response Error",
+              title: isLimit ? "AI Quota Limit Reached" : "AI Response Error",
               description:
                 aiError.response?.data?.message || "Could not retrieve reply.",
-              status: "error",
-              duration: 4000,
+              status: isLimit ? "warning" : "error",
+              duration: 5000,
               isClosable: true,
               position: "top",
             });

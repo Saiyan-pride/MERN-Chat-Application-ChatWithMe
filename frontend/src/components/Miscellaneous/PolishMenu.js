@@ -22,6 +22,7 @@ import {
 function PolishMenu({ draftText, onApplyPolish }) {
   const { user } = ChatState();
   const [loading, setLoading] = useState(false);
+  const [usage, setUsage] = useState(null);
   const toast = useToast();
 
   const handlePolish = async (tone) => {
@@ -52,6 +53,10 @@ function PolishMenu({ draftText, onApplyPolish }) {
         config
       );
 
+      if (data.usage) {
+        setUsage(data.usage);
+      }
+
       if (data.polishedText) {
         onApplyPolish(data.polishedText);
         toast({
@@ -65,12 +70,27 @@ function PolishMenu({ draftText, onApplyPolish }) {
       }
       setLoading(false);
     } catch (err) {
+      const isLimit =
+        err.response?.status === 429 ||
+        err.response?.data?.errorType === "QUOTA_EXCEEDED" ||
+        err.response?.data?.errorType === "RATE_LIMITED";
+
+      if (
+        err.response?.data?.limitType === "feature" ||
+        err.response?.data?.limitType === "combined"
+      ) {
+        setUsage((prev) => ({
+          ...prev,
+          remaining: 0,
+        }));
+      }
+
       toast({
-        title: "Polish Failed",
+        title: isLimit ? "Usage Limit Reached" : "Polish Failed",
         description:
           err.response?.data?.message || "Could not rephrase draft at this time.",
-        status: "error",
-        duration: 4000,
+        status: isLimit ? "warning" : "error",
+        duration: 5000,
         isClosable: true,
         position: "top",
       });
@@ -78,16 +98,23 @@ function PolishMenu({ draftText, onApplyPolish }) {
     }
   };
 
+  const isQuotaDepleted = usage && usage.remaining === 0;
+  const tooltipLabel = isQuotaDepleted
+    ? "Daily polish quota exhausted. Resets at 00:00 UTC."
+    : usage && typeof usage.remaining === "number"
+    ? `Polish message with AI (${usage.remaining}/${usage.limit} left)`
+    : "Polish message with AI";
+
   return (
     <Menu isLazy>
-      <Tooltip label="Polish message with AI" placement="top" hasArrow>
+      <Tooltip label={tooltipLabel} placement="top" hasArrow>
         <MenuButton
           as={IconButton}
           aria-label="Polish tone"
           icon={loading ? <Spinner size="xs" /> : <SparklesIcon color="purple.500" boxSize={4} />}
           size="sm"
           variant="ghost"
-          isDisabled={loading}
+          isDisabled={loading || isQuotaDepleted}
           mr={1}
           _hover={{ bg: "purple.50" }}
         />

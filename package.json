@@ -5,7 +5,7 @@
   "main": "server.js",
   "scripts": {
     "start": "nodemon backend/server.js",
-    "test": "node backend/tests/passwordReset.test.js && node backend/tests/ai.test.js"
+    "test": "node backend/tests/passwordReset.test.js && node backend/tests/ai.test.js && node backend/tests/aiUsage.test.js"
   },
   "author": "manish",
   "license": "ISC",
